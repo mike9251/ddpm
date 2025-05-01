@@ -125,8 +125,6 @@ class Trainer:
                         )
                     )
                     pbar.update(1)
-                    break
-
 
             logs = {tag: meter.compute() for tag, meter in self.epoch_meters.items()}
             # imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
