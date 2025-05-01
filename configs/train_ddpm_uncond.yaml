@@ -1,0 +1,29 @@
+task_name: DDPM_Uncond_Celeba_64
+
+data_dir: /Users/petrushkovm/Downloads/celeba_hq_256
+img_size: 64
+batch_size: 4
+num_workers: 0
+grad_accum_steps: 8
+
+lr: 3e-4
+ddp: false
+log_every: 1000
+num_img_to_sample: 4
+epochs: 100
+resume_from: null
+
+time_dim: 256
+noise_steps: 1000
+beta_start: 1e-4
+beta_end: 2e-2
+device: mps
+
+# Paths configuration
+log_dir: ./logs
+output_dir: ${hydra:runtime.output_dir} # this dir is formed below
+
+hydra:
+  # Output directory for logs, checkpoints, etc.
+  run:
+    dir: ${log_dir}/${task_name}/runs/${now:%Y-%m-%d}_${now:%H-%M-%S}
