@@ -58,6 +58,39 @@ class LinearNoiseScheduler:
         model.train()
 
         return x
+    
+    @torch.no_grad()
+    def sample_ema(self, model: nn.Module, ema_model: nn.Module, num_images: int):
+        model.eval()
+
+        x = torch.randn((num_images, 3, self.img_size, self.img_size), device=self.device)
+        for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            t = i * torch.ones((num_images,), device=self.device, dtype=torch.long)
+
+            pred_noise = model(x, t)
+            pred_noise_ema = ema_model(x, t)
+
+            alpha = self.alpha[t].view(num_images, 1, 1, 1)
+            alpha_hat = self.alpha_hat[t].view(num_images, 1, 1, 1)
+            beta = self.beta[t].view(num_images, 1, 1, 1)
+            # print(f"{i=} {x.min()=} {x.max()=} {beta=} {torch.sqrt(beta)=}")
+
+            noise = torch.randn_like(x)
+
+            if i == 1:
+                noise *= 0
+
+            x = 1.0 / torch.sqrt(alpha) * (x - ((1.0 - alpha) / (torch.sqrt(1.0 - alpha_hat))) * pred_noise) + torch.sqrt(beta) * noise
+            x_ema = 1.0 / torch.sqrt(alpha) * (x - ((1.0 - alpha) / (torch.sqrt(1.0 - alpha_hat))) * pred_noise_ema) + torch.sqrt(beta) * noise
+
+        x = (x.clamp(-1, 1) + 1) / 2
+        x_ema = (x_ema.clamp(-1, 1) + 1) / 2
+        
+        # x = (x * 255).type(torch.uint8)
+
+        model.train()
+
+        return {"imgs": x, "imgs_ema": x_ema}
 
 
 if __name__ == "__main__":

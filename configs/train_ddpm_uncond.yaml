@@ -20,6 +20,10 @@ beta_start: 1e-4
 beta_end: 2e-2
 device: mps
 
+beta_ema: 0.995
+step_ema: 0
+start_step_ema: 2000
+
 # Paths configuration
 log_dir: ./logs
 output_dir: ${hydra:runtime.output_dir} # this dir is formed below

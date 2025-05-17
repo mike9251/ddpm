@@ -11,7 +11,9 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
+import copy
 
+from ema import EMA
 from unet import UNet
 from dataloader import get_dataloader
 from loggers import TensorboardLogger
@@ -55,6 +57,9 @@ class Trainer:
 
         self.unet = UNet(time_dim=config["time_dim"], width=config["width"], num_classes=config["num_classes"], device=self.device).to(self.device)
         self.unet.train()
+
+        self.ema = EMA(beta=config["beta_ema"], step=config["step_ema"], start_step=config["start_step_ema"])
+        self.ema_unet = copy.deepcopy(self.unet).eval().requires_grad_(False)
 
         print(f"Number of parameters: {human_format(count_parameters(self.unet))}")
 
@@ -120,14 +125,19 @@ class Trainer:
                     loss.backward()
                     self.opt.step()
 
+                    self.ema.update_ema_model(self.unet, self.ema_unet)
+
                     self.running_meters["train/running/mse_loss"].update(loss.detach().cpu().item())
                     self.epoch_meters["train/epoch/mse_loss"].update(loss.detach().cpu().item())
 
                     if global_step % self.log_every == 0:
                         logs = {tag: meter.compute() for tag, meter in self.running_meters.items()}
 
-                        imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
-                        logs["img"] = imgs.detach().cpu()
+                        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample)
+                        logs.update({title: imgs.detach().cpu() for title, imgs in sampled_images.items()})
+
+                        # ema_imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
+                        # logs["img"] = imgs.detach().cpu()
 
                         if self.rank == 0:
                             self.logger.log(logs, global_step)
