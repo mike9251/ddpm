@@ -22,7 +22,7 @@ device: mps
 
 beta_ema: 0.995
 step_ema: 0
-start_step_ema: 2000
+start_step_ema: 20000
 
 # Paths configuration
 log_dir: ./logs

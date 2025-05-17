@@ -85,7 +85,7 @@ class Trainer:
     
     def _load_state(self, ckpt_path: Path):
         ckpt = torch.load(ckpt_path, map_location="cpu")
-        self._unwrap().load_state_dict(ckpt["unet"])
+        self._unwrap().load_state_dict(ckpt["unet_ema"])
         self.opt.load_state_dict(ckpt["opt"])
         self.last_epoch = ckpt["epoch"]
         logging.info(f"Resume training from {ckpt_path} from last epoch {self.last_epoch}")
@@ -96,10 +96,10 @@ class Trainer:
 
         os.makedirs(self.output_dir / "checkpoints", exist_ok=True)
 
-        torch.save({"unet": self._unwrap().state_dict(),
+        torch.save({"unet_ema": self._unwrap().state_dict(),
                     "opt": self.opt.state_dict(),
                     "epoch": epoch
-                    }, self.output_dir / "checkpoints" / f"unet_epoch_{epoch}.pt")
+                    }, self.output_dir / "checkpoints" / f"unet_epoch_{epoch}_{(epoch + 1) * len(self.dataloader)}_ema_{self.ema.start_step}.pt")
     
     def train(self):
         start_epoch = self.last_epoch + 1
