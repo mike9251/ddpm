@@ -23,6 +23,20 @@ from utils import set_seed
 logging.basicConfig(filename=None, encoding="utf-8", level=logging.DEBUG)
 
 
+from math import log, floor
+
+
+def human_format(number):
+    units = ['', 'K', 'M', 'G', 'T', 'P']
+    k = 1000.0
+    magnitude = int(floor(log(number, k)))
+    return '%.2f%s' % (number / k**magnitude, units[magnitude])
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 class Trainer:
     def __init__(self, config: DictConfig):
         self.output_dir = Path(config["output_dir"])
@@ -31,7 +45,6 @@ class Trainer:
         self.last_epoch = -1
         self.epochs = config["epochs"]
         self.num_img_to_sample = config["num_img_to_sample"]
-        self.grad_accum_steps = config["grad_accum_steps"]
 
         self.device_id = config.get("device_id", 0)
         self.rank = config.get("rank", 0)
@@ -40,7 +53,10 @@ class Trainer:
 
         self.device = torch.device(config["device"] + f":{self.device_id}")
 
-        self.unet = UNet(config["time_dim"], self.device).to(self.device)
+        self.unet = UNet(time_dim=config["time_dim"], width=config["width"], num_classes=config["num_classes"], device=self.device).to(self.device)
+        self.unet.train()
+
+        print(f"Number of parameters: {human_format(count_parameters(self.unet))}")
 
         if self.ddp:
             self.unet = DDP(self.unet, device_ids=[self.device_id], find_unused_parameters=False)
@@ -87,8 +103,6 @@ class Trainer:
             if self.ddp:
                 self.dataloader.sampler.set_epoch(epoch)
 
-            self.opt.zero_grad()
-
             with tqdm(range(steps_per_epoch), disable=not self.rank == 0) as pbar:
                 for i, x0 in enumerate(self.dataloader):
                     global_step = i + steps_per_epoch * epoch
@@ -96,20 +110,20 @@ class Trainer:
                     t = self.noise_scheduler.sample_timesteps(x0.shape[0])
                     xt, noise = self.noise_scheduler.noise_image(x0, t)
 
-                    noise_pred = self.unet(xt, t)
+                    # y = torch.randint(low=0, high=10, size=(x0.shape[0],), device=self.device)
+
+                    noise_pred = self.unet(xt, t)#, y)
 
                     loss = F.mse_loss(noise_pred, noise)
 
+                    self.opt.zero_grad()
                     loss.backward()
-
-                    if global_step > 0 and global_step % self.grad_accum_steps == 0:
-                        self.opt.step()
-                        self.opt.zero_grad()
+                    self.opt.step()
 
                     self.running_meters["train/running/mse_loss"].update(loss.detach().cpu().item())
                     self.epoch_meters["train/epoch/mse_loss"].update(loss.detach().cpu().item())
 
-                    if (i + 0) % self.log_every == 0:
+                    if global_step % self.log_every == 0:
                         logs = {tag: meter.compute() for tag, meter in self.running_meters.items()}
 
                         imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)

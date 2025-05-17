@@ -4,15 +4,16 @@ data_dir: /Users/petrushkovm/Downloads/celeba_hq_256
 img_size: 64
 batch_size: 4
 num_workers: 0
-grad_accum_steps: 8
 
 lr: 3e-4
 ddp: false
 log_every: 1000
-num_img_to_sample: 4
+num_img_to_sample: 16
 epochs: 100
 resume_from: null
 
+width: 2
+num_classes: null
 time_dim: 256
 noise_steps: 1000
 beta_start: 1e-4
