@@ -47,6 +47,7 @@ class Trainer:
         self.last_epoch = -1
         self.epochs = config["epochs"]
         self.num_img_to_sample = config["num_img_to_sample"]
+        self.ckpt_every = config["ckpt_every"]
 
         self.device_id = config.get("device_id", 0)
         self.rank = config.get("rank", 0)
@@ -58,7 +59,7 @@ class Trainer:
         self.unet = UNet(time_dim=config["time_dim"], width=config["width"], num_classes=config["num_classes"], device=self.device).to(self.device)
         self.unet.train()
 
-        self.ema = EMA(beta=config["beta_ema"], step=config["step_ema"], start_step=config["start_step_ema"])
+        self.ema = EMA(beta=config["beta_ema"], start_step=config["start_step_ema"])
         self.ema_unet = copy.deepcopy(self.unet).eval().requires_grad_(False)
 
         print(f"Number of parameters: {human_format(count_parameters(self.unet))}")
@@ -67,7 +68,7 @@ class Trainer:
             self.unet = DDP(self.unet, device_ids=[self.device_id], find_unused_parameters=False)
             self.world_size = dist.get_world_size()
         
-        self.opt = torch.optim.Adam(self._unwrap().parameters(), lr=config["lr"])
+        self.opt = torch.optim.AdamW(self._unwrap().parameters(), lr=config["lr"])
 
         if config.resume_from is not None:
             self._load_state(config.resume_from)
@@ -88,18 +89,28 @@ class Trainer:
         self._unwrap().load_state_dict(ckpt["unet_ema"])
         self.opt.load_state_dict(ckpt["opt"])
         self.last_epoch = ckpt["epoch"]
+
         logging.info(f"Resume training from {ckpt_path} from last epoch {self.last_epoch}")
+
+        if "unet_ema" in ckpt:
+            self.ema_unet.load_state_dict(ckpt["unet_ema"])
+            logging.info(f"Loaded EMA model too!")
 
     def _save_checkpoint(self, epoch: int):
         if self.rank != 0:
             return
+        
+        if epoch % self.ckpt_every != 0:
+            return
 
         os.makedirs(self.output_dir / "checkpoints", exist_ok=True)
 
-        torch.save({"unet_ema": self._unwrap().state_dict(),
+        torch.save({"unet": self._unwrap().state_dict(),
+                    "unet_ema": self.ema_unet().state_dict(),
                     "opt": self.opt.state_dict(),
                     "epoch": epoch
                     }, self.output_dir / "checkpoints" / f"unet_epoch_{epoch}_{(epoch + 1) * len(self.dataloader)}_ema_{self.ema.start_step}.pt")
+        logging.info(f"Checkpoint saved ({self.ckpt_every})")
     
     def train(self):
         start_epoch = self.last_epoch + 1
@@ -125,7 +136,7 @@ class Trainer:
                     loss.backward()
                     self.opt.step()
 
-                    self.ema.update_ema_model(self.unet, self.ema_unet)
+                    self.ema.update_ema_model(self.unet, self.ema_unet, global_step)
 
                     self.running_meters["train/running/mse_loss"].update(loss.detach().cpu().item())
                     self.epoch_meters["train/epoch/mse_loss"].update(loss.detach().cpu().item())

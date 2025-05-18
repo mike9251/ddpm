@@ -11,8 +11,9 @@ log_every: 1000
 num_img_to_sample: 16
 epochs: 100
 resume_from: null
+ckpt_every: 1
 
-width: 2
+width: 1
 num_classes: null
 time_dim: 256
 noise_steps: 1000
@@ -21,8 +22,7 @@ beta_end: 2e-2
 device: mps
 
 beta_ema: 0.995
-step_ema: 0
-start_step_ema: 20000
+start_step_ema: 10000
 
 # Paths configuration
 log_dir: ./logs

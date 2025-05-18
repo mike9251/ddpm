@@ -15,8 +15,16 @@ class CelebaDataset(Dataset):
         self.img_size = img_size
 
     @staticmethod
-    def transform(x):
-        return (x / 127.5 - 1).astype(np.float32).transpose(2, 0, 1)
+    def normalize(x):
+        return (x / 127.5 - 1).astype(np.float32)
+    
+    @staticmethod
+    def transpose(x):
+        return x.transpose(2, 0, 1)
+    
+    @staticmethod
+    def flip_x(x):
+        return x[:, :, -1::-1].copy()
 
     def __len__(self):
         return len(self.img_paths)
@@ -32,8 +40,12 @@ class CelebaDataset(Dataset):
             img = cv2.resize(img, (self.img_size, self.img_size), interpolation=cv2.INTER_CUBIC)
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = self.transform(img)
+        img = self.normalize(img)
+        img = self.transpose(img)
 
+        if random.randint(0, 1) == 1:
+            img = self.flip_x(img)
+        
         return img
 
 
@@ -66,9 +78,9 @@ if __name__ == "__main__":
     print(len(dataset))
 
     img = dataset[10]
-    print(img.shape, img.dtype, img.min(), img.max())
+    print(f"{img.shape=}, {img.dtype=}, {img.min()=}, {img.max()=}")
 
-    cv2.imshow("img", img)
+    cv2.imshow("img", img.transpose(1, 2, 0))
     cv2.waitKey(0)
 
     # dataloader = DataLoader(dataset, batch_size=3, num_workers=0, shuffle=True)
