@@ -106,7 +106,7 @@ class Trainer:
         os.makedirs(self.output_dir / "checkpoints", exist_ok=True)
 
         torch.save({"unet": self._unwrap().state_dict(),
-                    "unet_ema": self.ema_unet().state_dict(),
+                    "unet_ema": self.ema_unet.state_dict(),
                     "opt": self.opt.state_dict(),
                     "epoch": epoch
                     }, self.output_dir / "checkpoints" / f"unet_epoch_{epoch}_{(epoch + 1) * len(self.dataloader)}_ema_{self.ema.start_step}.pt")
