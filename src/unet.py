@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from blocks import DoubleConv, DownBlock, UpBlock, SelfAttention
 
@@ -36,7 +35,6 @@ class UNet(nn.Module):
 
     def pos_encoding(self, t, channels):
         inv_freq = 1.0 / (10000 ** (torch.arange(0, channels, 2, device=self.device, dtype=torch.float) / channels))
-        # print(t.shape, inv_freq.shape)
 
         pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
         pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)

@@ -11,7 +11,6 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
-import copy
 
 from ema import EMA
 from unet import UNet
@@ -20,8 +19,8 @@ from loggers import TensorboardLogger
 from schedulers import LinearNoiseScheduler
 from meters import RunningMeter
 from utils import set_seed
-
-
+import torchvision
+import cv2
 logging.basicConfig(filename=None, encoding="utf-8", level=logging.DEBUG)
 
 
@@ -53,6 +52,7 @@ class Trainer:
         self.rank = config.get("rank", 0)
         self.ddp = config["ddp"]
         self.world_size = 1
+        self.num_classes = config["num_classes"]
 
         self.device = torch.device(config["device"] + f":{self.device_id}")
 
@@ -60,7 +60,7 @@ class Trainer:
         self.unet.train()
 
         self.ema = EMA(beta=config["beta_ema"], start_step=config["start_step_ema"])
-        self.ema_unet = copy.deepcopy(self.unet).eval().requires_grad_(False)
+        self.ema_unet = UNet(time_dim=config["time_dim"], width=config["width"], num_classes=config["num_classes"], device=self.device).to(self.device).eval().requires_grad_(False)
 
         print(f"Number of parameters: {human_format(count_parameters(self.unet))}")
 
@@ -73,7 +73,11 @@ class Trainer:
         if config.resume_from is not None:
             self._load_state(config.resume_from)
 
-        self.dataloader = get_dataloader(config["data_dir"], config["img_size"], config["batch_size"], config["num_workers"], config["ddp"])
+        if config["device"] == "cuda":
+            self.unet = torch.compile(self.unet)
+            self.ema_unet = torch.compile(self.ema_unet)
+
+        self.dataloader = get_dataloader(config["data_dir"], config["img_size"], config["batch_size"], config["labels_path"], config["num_workers"], config["ddp"])
         self.noise_scheduler = LinearNoiseScheduler(config)
 
         self.running_meters = {"train/running/mse_loss": RunningMeter(window_size=self.log_every, ddp=self.ddp)}
@@ -86,14 +90,14 @@ class Trainer:
     
     def _load_state(self, ckpt_path: Path):
         ckpt = torch.load(ckpt_path, map_location="cpu")
-        self._unwrap().load_state_dict(ckpt["unet_ema"])
+        self._unwrap().load_state_dict({k.split("_orig_mod.")[1]: p for k, p in ckpt["unet"].items()})
         self.opt.load_state_dict(ckpt["opt"])
         self.last_epoch = ckpt["epoch"]
 
         logging.info(f"Resume training from {ckpt_path} from last epoch {self.last_epoch}")
 
         if "unet_ema" in ckpt:
-            self.ema_unet.load_state_dict(ckpt["unet_ema"])
+            self.ema_unet.load_state_dict({k.split("_orig_mod.")[1]: p for k, p in ckpt["unet_ema"].items()})
             logging.info(f"Loaded EMA model too!")
 
     def _save_checkpoint(self, epoch: int):
@@ -111,6 +115,18 @@ class Trainer:
                     "epoch": epoch
                     }, self.output_dir / "checkpoints" / f"unet_epoch_{epoch}_{(epoch + 1) * len(self.dataloader)}_ema_{self.ema.start_step}.pt")
         logging.info(f"Checkpoint saved ({self.ckpt_every})")
+
+    def sample(self):
+        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample)
+        
+        def save_images(images, path, **kwargs):
+            grid = torchvision.utils.make_grid(images, **kwargs)
+            img = (255 * np.clip(grid.permute(1, 2, 0).to('cpu').numpy(), 0.0, 1.0)).astype(np.uint8)
+            cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+        save_images(sampled_images["imgs"], "/Users/petrushkovm/Projects/Diffusion/Data/imgs.jpg")
+        save_images(sampled_images["imgs_ema"], "/Users/petrushkovm/Projects/Diffusion/Data/imgs_ema.jpg")
+
     
     def train(self):
         start_epoch = self.last_epoch + 1
@@ -120,15 +136,16 @@ class Trainer:
                 self.dataloader.sampler.set_epoch(epoch)
 
             with tqdm(range(steps_per_epoch), disable=not self.rank == 0) as pbar:
-                for i, x0 in enumerate(self.dataloader):
+                for i, (x0, y) in enumerate(self.dataloader):
                     global_step = i + steps_per_epoch * epoch
                     x0 = x0.to(self.device)
+                    if y is not None:
+                        y = y.to(self.device)
+
                     t = self.noise_scheduler.sample_timesteps(x0.shape[0])
                     xt, noise = self.noise_scheduler.noise_image(x0, t)
 
-                    # y = torch.randint(low=0, high=10, size=(x0.shape[0],), device=self.device)
-
-                    noise_pred = self.unet(xt, t)#, y)
+                    noise_pred = self.unet(xt, t, y)
 
                     loss = F.mse_loss(noise_pred, noise)
 
@@ -144,7 +161,7 @@ class Trainer:
                     if global_step % self.log_every == 0:
                         logs = {tag: meter.compute() for tag, meter in self.running_meters.items()}
 
-                        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample)
+                        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample, self.num_classes)
                         logs.update({title: imgs.detach().cpu() for title, imgs in sampled_images.items()})
 
                         # ema_imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
@@ -162,8 +179,7 @@ class Trainer:
                     pbar.update(1)
 
             logs = {tag: meter.compute() for tag, meter in self.epoch_meters.items()}
-            # imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
-            # logs["img"] = imgs.detach().cpu()
+
             if self.rank == 0:
                 self.logger.log(logs, global_step)
 
@@ -192,6 +208,7 @@ def main(config: DictConfig):
 
     logging.info("Start training!")
     trainer.train()
+    # trainer.sample()
     logging.info("Done training!")
 
     if config.ddp:

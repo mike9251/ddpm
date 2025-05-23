@@ -1,0 +1,25 @@
+device: "mps"
+output_dir: ./output
+img_size: 64
+num_img_to_sample: 16
+random_seed: null
+
+ckpt_path: /Users/petrushkovm/Projects/logs/DDPM_Celeba_64/unet_epoch_200_188538_ema_10000.pt
+use_ema: true
+
+width: 1
+num_classes: null
+time_dim: 256
+noise_steps: 1000
+beta_start: 1e-4
+beta_end: 2e-2
+
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+hydra:
+  output_subdir: null
+  run:
+    dir: ${output_dir}

@@ -1,6 +1,7 @@
 import random
 from pathlib import Path
 
+import pandas as pd
 import cv2
 import numpy as np
 import torch
@@ -8,11 +9,16 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 
 
 class CelebaDataset(Dataset):
-    def __init__(self, path: str, img_size: int = 256):
+    def __init__(self, path: str, img_size: int = 256, labels_path: str = None):
         super().__init__()
 
         self.img_paths = list(Path(path).glob("*.jpg"))
         self.img_size = img_size
+
+        self.labels = []
+        if labels_path is not None:
+            df = pd.read_csv(labels_path)
+            self.labels = df["gender_label"].to_numpy().tolist()
 
     @staticmethod
     def normalize(x):
@@ -46,11 +52,15 @@ class CelebaDataset(Dataset):
         if random.randint(0, 1) == 1:
             img = self.flip_x(img)
         
+        # conditional case
+        if self.labels:
+            return img, self.labels[idx]
+
         return img
 
 
-def get_dataloader(data_dir, img_size, batch_size, num_workers=0, ddp=False):
-    dataset = CelebaDataset(data_dir, img_size)
+def get_dataloader(data_dir, img_size, batch_size, labels_path=None, num_workers=0, ddp=False):
+    dataset = CelebaDataset(data_dir, img_size, labels_path=labels_path)
     sampler = DistributedSampler(dataset) if ddp else None
 
     def seed_worker(worker_id):

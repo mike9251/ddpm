@@ -1,6 +1,7 @@
-task_name: DDPM_Uncond_Celeba_64
+task_name: DDPM_ClassCond_Celeba_64
 
 data_dir: path-to-celeba-dataset
+labels_path: null
 img_size: 64
 batch_size: 32
 num_workers: 12
@@ -12,6 +13,7 @@ num_img_to_sample: 16
 epochs: 100
 resume_from: null
 ckpt_every: 1
+device: cuda
 
 width: 1
 num_classes: null
@@ -19,7 +21,6 @@ time_dim: 256
 noise_steps: 1000
 beta_start: 1e-4
 beta_end: 2e-2
-device: cuda
 
 beta_ema: 0.995
 start_step_ema: 10000
