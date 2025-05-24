@@ -38,6 +38,15 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def count_parameters(d):
+    count = 0
+    for k, v in d.items():
+        curr_count = 1
+        for s in v.shape:
+            curr_count *= s
+        count += curr_count
+    return count
+
 class Trainer:
     def __init__(self, config: DictConfig):
         self.output_dir = Path(config["output_dir"])
@@ -53,6 +62,7 @@ class Trainer:
         self.ddp = config["ddp"]
         self.world_size = 1
         self.num_classes = config["num_classes"]
+        self.cfg_scale = config.get("cfg_scale", 0)
 
         self.device = torch.device(config["device"] + f":{self.device_id}")
 
@@ -139,6 +149,10 @@ class Trainer:
                 for i, (x0, y) in enumerate(self.dataloader):
                     global_step = i + steps_per_epoch * epoch
                     x0 = x0.to(self.device)
+
+                    if self.cfg_scale > 0 and np.random.rand() < 0.1:
+                        y = None
+                    
                     if y is not None:
                         y = y.to(self.device)
 

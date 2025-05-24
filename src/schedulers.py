@@ -56,7 +56,7 @@ class LinearNoiseScheduler:
         return x
     
     @torch.no_grad()
-    def sample_ema(self, model: nn.Module, ema_model: nn.Module, num_images: int, num_classes: int = 0):
+    def sample_ema(self, model: nn.Module, ema_model: nn.Module, num_images: int, num_classes: int = 0, cfg_scale: float = 3.0):
         model.eval()
 
         x = torch.randn((num_images, 3, self.img_size, self.img_size), device=self.device)
@@ -78,6 +78,13 @@ class LinearNoiseScheduler:
 
             pred_noise = model(x, t, y)
             pred_noise_ema = ema_model(x_ema, t, y)
+
+            if cfg_scale > 0:
+                pred_noise_uncond = model(x, t, None)
+                pred_noise_ema_uncond = ema_model(x_ema, t, None)
+                
+                pred_noise = torch.lerp(pred_noise_uncond, pred_noise, cfg_scale)
+                pred_noise_ema = torch.lerp(pred_noise_ema_uncond, pred_noise_ema, cfg_scale)
 
             alpha = self.alpha[t].view(num_images, 1, 1, 1)
             alpha_hat = self.alpha_hat[t].view(num_images, 1, 1, 1)
