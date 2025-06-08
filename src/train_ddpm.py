@@ -38,15 +38,6 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def count_parameters(d):
-    count = 0
-    for k, v in d.items():
-        curr_count = 1
-        for s in v.shape:
-            curr_count *= s
-        count += curr_count
-    return count
-
 class Trainer:
     def __init__(self, config: DictConfig):
         self.output_dir = Path(config["output_dir"])
@@ -175,7 +166,7 @@ class Trainer:
                     if global_step % self.log_every == 0:
                         logs = {tag: meter.compute() for tag, meter in self.running_meters.items()}
 
-                        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample, self.num_classes)
+                        sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample, self.num_classes, self.cfg_scale)
                         logs.update({title: imgs.detach().cpu() for title, imgs in sampled_images.items()})
 
                         # ema_imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
