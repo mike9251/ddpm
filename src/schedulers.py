@@ -31,13 +31,29 @@ class LinearNoiseScheduler:
         return torch.randint(low=1, high=self.noise_steps, size=(n,), device=self.device)
     
     @torch.no_grad()
-    def sample(self, model: nn.Module, num_images: int):
+    def sample(self, model: nn.Module, num_images: int, num_classes: int = 0, cfg_scale: float = 3.0):
         model.eval()
+
+        y = None
+        if num_classes is not None:
+            y = []
+            img_per_class = num_images // num_classes
+            for cl in range(num_classes):
+                y.append(cl * torch.ones((img_per_class, )))
+            
+            y = torch.cat(y, dim=0)
+            y = y.int()
+            y = y.to(self.device)
 
         x = torch.randn((num_images, 3, self.img_size, self.img_size), device=self.device)
         for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
             t = i * torch.ones((num_images,), device=self.device, dtype=torch.long)
-            pred_noise = model(x, t)
+            pred_noise = model(x, t, y)
+
+            if cfg_scale > 0:
+                pred_noise_uncond = model(x, t, None)
+                pred_noise = torch.lerp(pred_noise_uncond, pred_noise, cfg_scale)
+
             alpha = self.alpha[t].view(num_images, 1, 1, 1)
             alpha_hat = self.alpha_hat[t].view(num_images, 1, 1, 1)
             beta = self.beta[t].view(num_images, 1, 1, 1)

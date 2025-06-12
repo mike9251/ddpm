@@ -37,7 +37,7 @@ def main(config: DictConfig):
     
     print(f"Loaded EMA weights: {config.use_ema}")
 
-    sampled_images = noise_scheduler.sample(model, config.num_img_to_sample)
+    sampled_images = noise_scheduler.sample(model, config.num_img_to_sample, num_classes=config.get("num_classes", None), cfg_scale=config.get("cfg_scale", 0.0))
 
     suffix = "_ema" if config.use_ema else ""
     for i in range(sampled_images.shape[0]):
