@@ -1,11 +1,10 @@
-device: "mps"
+device: cuda
 output_dir: ./output
 img_size: 64
 num_img_to_sample: 16
 random_seed: null
 
-ckpt_path: /Users/petrushkovm/Projects/logs/DDPM/DDPM_ClassCond_Celeba_64/runs/2025-05-23_14-23-33/checkpoints/unet_epoch_200_188538_ema_10000.pt
-# ckpt_path: /Users/petrushkovm/Projects/logs/DDPM/DDPM_ClassCond_Celeba_64_cfg_3/runs/2025-05-24_20-55-16/checkpoints/unet_epoch_260_163125_ema_10000.pt
+ckpt_path: path-to-ckpt
 use_ema: true
 
 width: 1
