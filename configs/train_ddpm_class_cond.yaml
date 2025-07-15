@@ -15,6 +15,7 @@ resume_from: null
 ckpt_every: 1
 device: cuda
 
+use_weighted_loss: true
 cfg_scale: 3.0
 width: 1
 num_classes: null

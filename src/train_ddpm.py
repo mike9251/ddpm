@@ -6,8 +6,6 @@ import hydra
 import numpy as np
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
-import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
@@ -54,6 +52,7 @@ class Trainer:
         self.world_size = 1
         self.num_classes = config["num_classes"]
         self.cfg_scale = config.get("cfg_scale", 0)
+        self.use_weighted_loss = config.get("use_weighted_loss", False)
 
         self.device = torch.device(config["device"] + f":{self.device_id}")
 
@@ -62,8 +61,6 @@ class Trainer:
 
         self.ema = EMA(beta=config["beta_ema"], start_step=config["start_step_ema"])
         self.ema_unet = UNet(time_dim=config["time_dim"], width=config["width"], num_classes=config["num_classes"], device=self.device).to(self.device).eval().requires_grad_(False)
-
-        print(f"Number of parameters: {human_format(count_parameters(self.unet))}")
 
         if self.ddp:
             self.unet = DDP(self.unet, device_ids=[self.device_id], find_unused_parameters=False)
@@ -83,6 +80,18 @@ class Trainer:
 
         self.running_meters = {"train/running/mse_loss": RunningMeter(window_size=self.log_every, ddp=self.ddp)}
         self.epoch_meters = {"train/epoch/mse_loss": RunningMeter(window_size=len(self.dataloader) // self.world_size, ddp=self.ddp)}
+
+        logging.info(f"Output DIR: {self.output_dir}")
+        logging.info(f"Log every: {self.log_every}")
+        logging.info(f"LOG DIR: {self.output_dir / 'logs'}")
+        logging.info(f"Train epoches: {self.epochs}")
+        logging.info(f"Num images to sample: {self.num_img_to_sample}")
+        logging.info(f"CKPT every: {self.ckpt_every}")
+        logging.info(f"CFG scale: {self.cfg_scale}")
+        logging.info(f"Use weighted loss: {self.use_weighted_loss}")
+        logging.info(f"Device: {self.device}")
+        logging.info(f"Number of parameters: {human_format(count_parameters(self.unet))}")
+
 
     def _unwrap(self):
         if self.ddp:
@@ -148,11 +157,16 @@ class Trainer:
                         y = y.to(self.device)
 
                     t = self.noise_scheduler.sample_timesteps(x0.shape[0])
-                    xt, noise = self.noise_scheduler.noise_image(x0, t)
+                    xt, noise, sigma_t = self.noise_scheduler.noise_image(x0, t)
 
                     noise_pred = self.unet(xt, t, y)
 
-                    loss = F.mse_loss(noise_pred, noise)
+                    w = 1.0
+
+                    if self.use_weighted_loss:
+                        w = sigma_t ** 2
+
+                    loss = (w * (noise - noise_pred).square()).mean()
 
                     self.opt.zero_grad()
                     loss.backward()
@@ -168,9 +182,6 @@ class Trainer:
 
                         sampled_images = self.noise_scheduler.sample_ema(self.unet, self.ema_unet, self.num_img_to_sample, self.num_classes, self.cfg_scale)
                         logs.update({title: imgs.detach().cpu() for title, imgs in sampled_images.items()})
-
-                        # ema_imgs = self.noise_scheduler.sample(self.unet, self.num_img_to_sample)
-                        # logs["img"] = imgs.detach().cpu()
 
                         if self.rank == 0:
                             self.logger.log(logs, global_step)

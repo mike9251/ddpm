@@ -23,9 +23,9 @@ class LinearNoiseScheduler:
         assert x.shape[0] == t.shape[0]
 
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t]).view(x.shape[0], 1, 1, 1)
-        sqrt_one_minus_alpha_hat = torch.sqrt(1.0 - self.alpha_hat[t]).view(x.shape[0], 1, 1, 1)
+        sqrt_one_minus_alpha_hat = torch.sqrt(1.0 - self.alpha_hat[t]).view(x.shape[0], 1, 1, 1) # sigma_t
         noise = torch.randn_like(x)
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise, noise
+        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise, noise, sqrt_one_minus_alpha_hat
     
     def sample_timesteps(self, n: int) -> torch.Tensor:
         return torch.randint(low=1, high=self.noise_steps, size=(n,), device=self.device)
